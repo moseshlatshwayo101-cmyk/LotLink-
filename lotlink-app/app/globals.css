@@ -1,0 +1,31 @@
+:root {
+  --bg: #0a0e17;
+  --panel: rgba(16, 24, 40, 0.85);
+  --border: rgba(0, 212, 255, 0.25);
+  --cyan: #00d4ff;
+  --text: #e8eef7;
+  --muted: #8b9bb4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: radial-gradient(ellipse at top, #121a2b 0%, var(--bg) 55%);
+  color: var(--text);
+}
+
+a {
+  color: var(--cyan);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
