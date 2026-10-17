@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LotLink Admin — Human Review</title>
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --panel: rgba(16, 24, 40, 0.85);
+      --border: rgba(0, 212, 255, 0.25);
+      --cyan: #00d4ff;
+      --text: #e8eef7;
+      --muted: #8b9bb4;
+      --danger: #ff5c7a;
+      --ok: #3ddc97;
+      --warn: #f5c542;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(ellipse at top, #121a2b 0%, var(--bg) 55%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      backdrop-filter: blur(12px);
+      background: rgba(10, 14, 23, 0.7);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    h1 { margin: 0; font-size: 1.15rem; letter-spacing: 0.04em; color: var(--cyan); }
+    .badge {
+      font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--muted); border: 1px solid var(--border); padding: 0.2rem 0.5rem; border-radius: 999px;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    .auth-panel, .card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+      padding: 1.25rem; margin-bottom: 1rem; box-shadow: 0 0 40px rgba(0, 212, 255, 0.06);
+    }
+    label { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 0.35rem; }
+    input, textarea {
+      width: 100%; background: rgba(0, 0, 0, 0.35); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 0.65rem 0.75rem; font-size: 0.95rem;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    button {
+      cursor: pointer; border: none; border-radius: 8px; padding: 0.6rem 1rem;
+      font-weight: 600; font-size: 0.9rem;
+    }
+    .btn-primary { background: linear-gradient(135deg, #00b8e6, #0077aa); color: #fff; }
+    .btn-ok { background: var(--ok); color: #062016; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-warn { background: var(--warn); color: #1a1400; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem; }
+    .muted { color: var(--muted); font-size: 0.85rem; }
+    .error { color: var(--danger); }
+    .ok { color: var(--ok); }
+    .run-meta {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.5rem; margin: 0.75rem 0;
+    }
+    .run-meta div {
+      background: rgba(0,0,0,0.25); border-radius: 8px; padding: 0.5rem 0.65rem; font-size: 0.8rem;
+    }
+    .run-meta strong {
+      display: block; color: var(--cyan); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .checklist { font-size: 0.85rem; color: var(--muted); margin: 0.5rem 0 1rem; }
+    .empty { text-align: center; padding: 2.5rem 1rem; color: var(--muted); }
+    #status { min-height: 1.25rem; margin-top: 0.5rem; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>LotLink Admin · Human Review</h1>
+    <span class="badge">Server-protected</span>
+  </header>
+  <main>
+    <section class="auth-panel" id="authPanel">
+      <label for="token">Admin token (ADMIN_TOKEN)</label>
+      <input id="token" type="password" autocomplete="off" placeholder="Paste admin token — never share or commit" />
+      <div class="row">
+        <button class="btn-primary" type="button" id="btnLoad">Load review queue</button>
+        <button class="btn-ghost" type="button" id="btnClear">Clear token from session</button>
+      </div>
+      <p class="muted">Token is stored only in this browser session (sessionStorage). Sent as <code>X-LotLink-Admin-Token</code>.</p>
+      <div id="status"></div>
+    </section>
+    <section id="queue"></section>
+  </main>
+  <script>
+    const API_BASE = "/api";
+    const $ = (id) => document.getElementById(id);
+    const statusEl = $("status");
+    const queueEl = $("queue");
+
+    function getToken() {
+      return sessionStorage.getItem("lotlink_admin_token") || $("token").value.trim();
+    }
+    function setStatus(msg, kind) {
+      statusEl.textContent = msg;
+      statusEl.className = kind || "";
+    }
+    async function api(path, options = {}) {
+      const token = getToken();
+      if (!token) throw new Error("Admin token required");
+      const headers = Object.assign(
+        { "Content-Type": "application/json", "X-LotLink-Admin-Token": token },
+        options.headers || {}
+      );
+      const res = await fetch(API_BASE + path, { ...options, headers });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || data.message || res.statusText);
+      return data;
+    }
+    function renderQueue(data) {
+      const pending = data.pending || [];
+      if (!pending.length) {
+        queueEl.innerHTML = '<div class="card empty">No items awaiting human review.</div>';
+        return;
+      }
+      queueEl.innerHTML = pending.map((item) => {
+        const cids = (item.candidates || []).map((c) => c.id);
+        return (
+          '<article class="card" data-run="' + item.researchRunId + '">' +
+          '<h2 style="margin:0 0 0.5rem;font-size:1rem;color:var(--cyan)">Research run ' + item.researchRunId.slice(0, 8) + '…</h2>' +
+          '<div class="run-meta">' +
+          '<div><strong>Request</strong>' + item.requestId.slice(0, 8) + '…</div>' +
+          '<div><strong>Status</strong>' + item.status + '</div>' +
+          '<div><strong>Candidates</strong>' + item.candidateCount + '</div>' +
+          '<div><strong>Submitted</strong>' + (item.submittedAt || '—') + '</div>' +
+          '</div>' +
+          '<p class="muted"><strong>Sources:</strong> ' + ((item.sourcesChecked || []).join(', ') || 'none') + '</p>' +
+          '<p class="muted"><strong>Plan:</strong> ' + (item.planSummary || '—') + '</p>' +
+          '<ul class="checklist">' +
+          '<li>' + item.reviewChecklist.evidence + '</li>' +
+          '<li>' + item.reviewChecklist.conflicts + '</li>' +
+          '<li>' + item.reviewChecklist.missingInformation + '</li>' +
+          '<li>' + item.reviewChecklist.risks + '</li>' +
+          '<li>' + item.reviewChecklist.assumptions + '</li>' +
+          '</ul>' +
+          (item.candidateCount === 0
+            ? '<p class="muted">No evidence-backed candidates. You may still REJECT or REQUEST_MORE_RESEARCH.</p>'
+            : '<p class="muted">Candidate IDs: ' + cids.join(', ') + '</p>') +
+          '<label>Decision notes (required)</label>' +
+          '<textarea class="notes" placeholder="Evidence checked, conflicts, risks, rationale…"></textarea>' +
+          '<label style="margin-top:0.5rem">Candidate IDs to approve (comma-separated, optional)</label>' +
+          '<input class="cids" value="' + cids.join(',') + '" />' +
+          '<div class="row">' +
+          '<button type="button" class="btn-ok" data-action="APPROVE">Approve (LotLink Verified)</button>' +
+          '<button type="button" class="btn-danger" data-action="REJECT">Reject</button>' +
+          '<button type="button" class="btn-warn" data-action="REQUEST_MORE_RESEARCH">Request more research</button>' +
+          '</div>' +
+          '<div class="decision-status muted" style="margin-top:0.5rem"></div>' +
+          '</article>'
+        );
+      }).join('');
+
+      queueEl.querySelectorAll('button[data-action]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const card = btn.closest('article');
+          const runId = card.getAttribute('data-run');
+          const notes = card.querySelector('.notes').value.trim();
+          const candidateIds = card.querySelector('.cids').value.split(',').map((s) => s.trim()).filter(Boolean);
+          const decision = btn.getAttribute('data-action');
+          const out = card.querySelector('.decision-status');
+          out.textContent = 'Submitting…';
+          try {
+            const result = await api('/admin/reviews/decide', {
+              method: 'POST',
+              body: JSON.stringify({ researchRunId: runId, decision, notes, candidateIds }),
+            });
+            out.textContent = (result.data && result.data.message) || 'Recorded';
+            out.className = 'decision-status ok';
+            if (decision === 'APPROVE' || decision === 'REJECT') setTimeout(loadQueue, 600);
+          } catch (e) {
+            out.textContent = e.message;
+            out.className = 'decision-status error';
+          }
+        });
+      });
+    }
+
+    async function loadQueue() {
+      const token = getToken();
+      if (!token) { setStatus('Enter admin token first.', 'error'); return; }
+      sessionStorage.setItem('lotlink_admin_token', token);
+      $('token').value = token;
+      setStatus('Loading…');
+      try {
+        const data = await api('/admin/reviews');
+        setStatus('Pending: ' + data.data.pendingCount, 'ok');
+        renderQueue(data.data);
+      } catch (e) {
+        setStatus(e.message, 'error');
+        queueEl.innerHTML = '';
+      }
+    }
+
+    $('btnLoad').addEventListener('click', loadQueue);
+    $('btnClear').addEventListener('click', () => {
+      sessionStorage.removeItem('lotlink_admin_token');
+      $('token').value = '';
+      queueEl.innerHTML = '';
+      setStatus('Token cleared from session.');
+    });
+    if (sessionStorage.getItem('lotlink_admin_token')) {
+      $('token').value = sessionStorage.getItem('lotlink_admin_token');
+    }
+  </script>
+</body>
+</html>
